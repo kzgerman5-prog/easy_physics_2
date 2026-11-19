@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rigid Body Velocity &amp; Wobble Term Intuition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      background-color: #090d16;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    /* Custom subtle range sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 999px;
+      background: #1e293b;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      margin-top: -5px;
+      height: 16px;
+      width: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+      transition: transform 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+    .canvas-container {
+      background-image: radial-gradient(circle at 50% 50%, #111827 0%, #070a12 100%);
+    }
+    .math-var {
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-sky-500/30 selection:text-sky-200">
+
+  <!-- Top Header -->
+  <header class="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500/20 to-amber-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 font-mono font-bold text-lg shadow-inner">
+          &omega;
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-100">
+            Rigid Body Velocity &amp; <span class="text-amber-400">"Wobble"</span> Coupling Visualizer
+          </h1>
+          <p class="text-xs text-slate-400 hidden sm:block">
+            Interactive intuition for <span class="font-mono text-slate-300">v<sub>i</sub> = [(v<sub>P</sub>)<sub>x</sub> &minus; &omega;y] i + [(v<sub>P</sub>)<sub>y</sub> + &omega;x] j</span> and Kinetic Energy <span class="font-mono text-slate-300">T</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Preset Buttons -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btnPresetTurntable" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition active:scale-95">
+          Turntable Example (3, 4)
+        </button>
+        <button id="btnPresetPureSpin" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition active:scale-95">
+          Pure Spin (v<sub>P</sub> = 0)
+        </button>
+        <button id="btnPresetCOM" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition active:scale-95">
+          Pin P at G (No Wobble)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- Left Column: Interactive Canvas + Quick Intuition Callout (7 cols on lg) -->
+    <div class="lg:col-span-7 flex flex-col gap-4">
+
+      <!-- Canvas Card -->
+      <div class="relative rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden shadow-2xl flex flex-col">
+        <!-- Top Toolbar inside Canvas -->
+        <div class="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <button id="btnPlayPause" class="px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white shadow transition active:scale-95">
+              <span id="playIcon">&#9654;</span>
+              <span id="playText">Animate Motion</span>
+            </button>
+            <button id="btnResetPose" class="px-2.5 py-1.5 rounded-lg font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+              Reset Pose
+            </button>
+          </div>
+
+          <div class="flex items-center gap-3 text-slate-300">
+            <label class="flex items-center gap-1.5 cursor-pointer select-none">
+              <input id="chkComponents" type="checkbox" checked class="rounded accent-amber-400 w-3.5 h-3.5">
+              <span>Show &minus;&omega;y &amp; +&omega;x legs</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer select-none">
+              <input id="chkCircle" type="checkbox" checked class="rounded accent-sky-400 w-3.5 h-3.5">
+              <span>Orbit circle</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Responsive Canvas Wrapper -->
+        <div id="canvasWrapper" class="relative w-full h-[380px] sm:h-[440px] canvas-container cursor-crosshair select-none touch-none">
+          <canvas id="simCanvas" class="w-full h-full block"></canvas>
+
+          <!-- Interactive Hint Badge -->
+          <div class="absolute top-3 left-3 pointer-events-none bg-slate-950/75 backdrop-blur-sm border border-slate-800/90 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>Drag point <strong class="text-white font-mono">i</strong> (or <strong class="text-rose-400 font-mono">P</strong>) on canvas</span>
+          </div>
+
+          <!-- Vector Legend Overlay -->
+          <div class="absolute bottom-3 left-3 right-3 pointer-events-none flex flex-wrap items-center justify-between gap-2 bg-slate-950/80 backdrop-blur-md border border-slate-800/90 rounded-xl px-3 py-2 text-[11px]">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span class="flex items-center gap-1.5 text-sky-400 font-medium">
+                <span class="w-3 h-1 bg-sky-400 rounded-full inline-block"></span>
+                v<sub>P</sub> (Slide of P)
+              </span>
+              <span class="flex items-center gap-1.5 text-amber-400 font-medium">
+                <span class="w-3 h-1 bg-amber-400 rounded-full inline-block"></span>
+                v<sub>i/P</sub> (Spin around P)
+              </span>
+              <span class="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                <span class="w-3 h-1 bg-emerald-400 rounded-full inline-block"></span>
+                v<sub>i</sub> = v<sub>P</sub> + v<sub>i/P</sub> (Total)
+              </span>
+            </div>
+            <span class="text-slate-400 font-mono hidden sm:inline">1 grid = 1 m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Intuition Story Card (Dynamic explanation based on current state) -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
+            <span>Why the signs (&minus;&omega;y, +&omega;x) happen right now</span>
+          </h2>
+          <span id="quadrantBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+            Quadrant I (x &gt; 0, y &gt; 0)
+          </span>
+        </div>
+        <p id="intuitionText" class="text-sm text-slate-300 leading-relaxed">
+          Loading intuition...
+        </p>
+      </div>
+
+      <!-- Controls Sliders Card -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- Position of i relative to P -->
+        <div class="space-y-3 bg-slate-950/50 p-3.5 rounded-xl border border-slate-800/80">
+          <div class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+            <span>Particle <span class="font-mono text-white">i</span> Position (from P)</span>
+            <span class="font-mono text-[11px] text-slate-400">r = <span id="valR">5.00</span> m</span>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Horizontal <span class="font-mono text-slate-200">x</span> (right +)</span>
+              <span class="font-mono font-semibold text-sky-300"><span id="valX">3.0</span> m</span>
+            </div>
+            <input id="sliderX" type="range" min="-5" max="5" step="0.5" value="3" class="w-full">
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Vertical <span class="font-mono text-slate-200">y</span> (up +)</span>
+              <span class="font-mono font-semibold text-sky-300"><span id="valY">4.0</span> m</span>
+            </div>
+            <input id="sliderY" type="range" min="-5" max="5" step="0.5" value="4" class="w-full">
+          </div>
+        </div>
+
+        <!-- Motion Parameters -->
+        <div class="space-y-3 bg-slate-950/50 p-3.5 rounded-xl border border-slate-800/80">
+          <div class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+            <span>Body Motion (<span class="font-mono text-amber-400">&omega;</span> &amp; <span class="font-mono text-sky-400">v<sub>P</sub></span>)</span>
+            <span id="spinDirLabel" class="font-mono text-[11px] text-amber-400">CCW (+)</span>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Spin <span class="font-mono text-amber-300">&omega;</span> (+CCW / &minus;CW)</span>
+              <span class="font-mono font-semibold text-amber-300"><span id="valOmega">2.0</span> rad/s</span>
+            </div>
+            <input id="sliderOmega" type="range" min="-4" max="4" step="0.5" value="2" class="w-full">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <div class="flex justify-between text-[11px] mb-1">
+                <span class="text-slate-400"><span class="font-mono text-sky-300">(v<sub>P</sub>)<sub>x</sub></span></span>
+                <span class="font-mono font-semibold text-sky-300"><span id="valVpx">10</span></span>
+              </div>
+              <input id="sliderVpx" type="range" min="-12" max="12" step="1" value="10" class="w-full">
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] mb-1">
+                <span class="text-slate-400"><span class="font-mono text-sky-300">(v<sub>P</sub>)<sub>y</sub></span></span>
+                <span class="font-mono font-semibold text-sky-300"><span id="valVpy">5</span></span>
+              </div>
+              <input id="sliderVpy" type="range" min="-12" max="12" step="1" value="5" class="w-full">
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Live Equations & Wobble Energy Breakdown (5 cols on lg) -->
+    <div class="lg:col-span-5 flex flex-col gap-4">
+
+      <!-- Step 1: Velocity Vector Derivation Live Card -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <span class="text-xs font-bold uppercase tracking-wider text-amber-400">Part 1 &bull; Velocity of Point i</span>
+          <span class="text-[11px] font-mono text-slate-400">Live Substitution</span>
+        </div>
+
+        <!-- Rotational Velocity Component Box -->
+        <div class="bg-slate-950/80 rounded-xl p-3.5 border border-amber-500/25 space-y-2">
+          <div class="text-xs text-slate-400 flex justify-between">
+            <span>1. Spin velocity of <strong class="text-white">i</strong> around <strong class="text-rose-400">P</strong>:</span>
+            <span class="font-mono text-amber-400">v<sub>i/P</sub> = &omega;k &times; (xi + yj)</span>
+          </div>
+          <div class="font-mono text-sm sm:text-base text-slate-200 overflow-x-auto py-1">
+            v<sub>i/P</sub> = (<span class="text-amber-400">&minus;&omega;y</span>) <b>i</b> + (<span class="text-amber-400">+&omega;x</span>) <b>j</b>
+          </div>
+          <div class="font-mono text-xs sm:text-sm bg-slate-900/90 rounded-lg px-3 py-2 border border-slate-800 text-amber-300">
+            v<sub>i/P</sub> = [<span id="eqRotX">-8.0</span>] <b>i</b> + [<span id="eqRotY">+6.0</span>] <b>j</b> <span class="text-slate-500 text-xs">m/s</span>
+          </div>
+        </div>
+
+        <!-- Total Velocity Component Box -->
+        <div class="bg-slate-950/80 rounded-xl p-3.5 border border-emerald-500/25 space-y-2">
+          <div class="text-xs text-slate-400 flex justify-between">
+            <span>2. Add slide of <strong class="text-rose-400">P</strong> (<span class="text-sky-400 font-mono">v<sub>P</sub></span>):</span>
+            <span class="font-mono text-emerald-400">v<sub>i</sub> = v<sub>P</sub> + v<sub>i/P</sub></span>
+          </div>
+          <div class="font-mono text-xs sm:text-sm text-slate-300">
+            v<sub>i</sub> = [<span class="text-sky-400">(v<sub>P</sub>)<sub>x</sub></span> <span class="text-amber-400">&minus; &omega;y</span>] <b>i</b> + [<span class="text-sky-400">(v<sub>P</sub>)<sub>y</sub></span> <span class="text-amber-400">+ &omega;x</span>] <b>j</b>
+          </div>
+          <div class="font-mono text-xs sm:text-sm bg-slate-900/90 rounded-lg px-3 py-2 border border-slate-800 text-slate-200 space-y-1">
+            <div>
+              v<sub>i</sub> = [<span id="eqTotXCalc" class="text-slate-300">10 &minus; 8.0</span>] <b>i</b> + [<span id="eqTotYCalc" class="text-slate-300">5 + 6.0</span>] <b>j</b>
+            </div>
+            <div class="text-emerald-400 font-bold text-sm pt-1 border-t border-slate-800/80 flex items-center justify-between">
+              <span>v<sub>i</sub> = <span id="eqTotVec">2.0 i + 11.0 j</span> m/s</span>
+              <span class="text-xs font-normal text-slate-400">|v<sub>i</sub>| = <span id="eqTotMag" class="text-emerald-300 font-semibold">11.18</span> m/s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Kinetic Energy & The Wobble Term Card -->
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5 shadow-xl space-y-4 flex-1 flex flex-col justify-between">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <span class="text-xs font-bold uppercase tracking-wider text-rose-400">Part 2 &bull; Kinetic Energy &amp; "Wobble"</span>
+            <span class="text-[11px] font-mono text-slate-400">m = 2 kg, I<sub>G</sub> = 12 kg&middot;m&sup2;</span>
+          </div>
+
+          <p class="text-xs text-slate-300 leading-relaxed">
+            When you integrate <span class="font-mono text-slate-200">&frac12;&int;v<sub>i</sub>&sup2; dm</span> across the whole body, the cross-terms produce the <strong class="text-amber-300">Wobble Correction</strong> whenever reference point <strong class="text-rose-400 font-mono">P</strong> is offset from Center of Mass <strong class="text-purple-400 font-mono">G</strong> by <span class="font-mono text-purple-300">(x&#772;, y&#772;)</span>:
+          </p>
+
+          <!-- Center of Mass Offset (x_bar, y_bar) Interactive Control -->
+          <div class="bg-slate-950/70 rounded-xl p-3 border border-purple-500/25 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-purple-300 font-medium">Center of Mass <span class="font-mono">G</span> offset from <span class="font-mono text-rose-400">P</span>:</span>
+              <span class="font-mono font-semibold text-purple-300">(x&#772;, y&#772;) = (<span id="valXbar">1.5</span>, <span id="valYbar">1.0</span>) m</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-400">
+                  <span>x&#772; (COM x)</span>
+                  <span id="lblXbar" class="font-mono text-purple-300">1.5 m</span>
+                </div>
+                <input id="sliderXbar" type="range" min="-3" max="3" step="0.5" value="1.5" class="w-full">
+              </div>
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-400">
+                  <span>y&#772; (COM y)</span>
+                  <span id="lblYbar" class="font-mono text-purple-300">1.0 m</span>
+                </div>
+                <input id="sliderYbar" type="range" min="-3" max="3" step="0.5" value="1.0" class="w-full">
+              </div>
+            </div>
+          </div>
+
+          <!-- 3-Term Energy Breakdown -->
+          <div class="space-y-2 pt-1">
+            <!-- Term 1: Moving -->
+            <div class="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-lg border border-slate-800">
+              <div>
+                <div class="text-xs font-semibold text-sky-400">1. Moving (<span class="font-mono">&frac12; m v<sub>P</sub>&sup2;</span>)</div>
+                <div class="text-[11px] text-slate-400">Translational energy if whole body moved like P</div>
+              </div>
+              <div id="energyMoving" class="font-mono font-bold text-sm text-sky-300">125.0 J</div>
+            </div>
+
+            <!-- Term 2: Wobble Correction -->
+            <div id="wobbleCard" class="flex items-center justify-between bg-amber-500/10 px-3 py-2.5 rounded-lg border border-amber-500/40 transition-colors">
+              <div>
+                <div class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>2. "Wobble" Correction</span>
+                  <span id="wobbleStatusBadge" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200 font-mono">ACTIVE</span>
+                </div>
+                <div class="text-[11px] font-mono text-amber-200/80 mt-0.5">
+                  &minus;(v<sub>P</sub>)<sub>x</sub>&omega;y&#772;m + (v<sub>P</sub>)<sub>y</sub>&omega;x&#772;m
+                </div>
+              </div>
+              <div id="energyWobble" class="font-mono font-bold text-sm text-amber-300">&minus;10.0 J</div>
+            </div>
+
+            <!-- Term 3: Spinning -->
+            <div class="flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-lg border border-slate-800">
+              <div>
+                <div class="text-xs font-semibold text-indigo-400">3. Spinning (<span class="font-mono">&frac12; I<sub>P</sub> &omega;&sup2;</span>)</div>
+                <div class="text-[11px] text-slate-400">I<sub>P</sub> = I<sub>G</sub> + m(x&#772;&sup2; + y&#772;&sup2;) = <span id="valIp" class="font-mono text-slate-300">18.5</span> kg&middot;m&sup2;</div>
+              </div>
+              <div id="energySpinning" class="font-mono font-bold text-sm text-indigo-300">37.0 J</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total Invariant Energy Footer -->
+        <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wider text-emerald-400">True Total Kinetic Energy (T)</div>
+            <div class="text-[11px] text-slate-400">Always equals <span class="font-mono text-slate-300">&frac12;mv<sub>G</sub>&sup2; + &frac12;I<sub>G</sub>&omega;&sup2;</span>!</div>
+          </div>
+          <div class="text-right">
+            <div id="energyTotal" class="font-mono text-lg font-extrabold text-emerald-400">152.0 J</div>
+            <div class="text-[10px] font-mono text-slate-400">Same regardless of P!</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // ==========================================
+    // STATE & PHYSICS CONSTANTS
+    // ==========================================
+    const state = {
+      // Position of particle i relative to reference point P (in meters)
+      x: 3.0,
+      y: 4.0,
+      // Angular velocity omega (rad/s, + is counterclockwise)
+      omega: 2.0,
+      // Translational velocity of P (m/s)
+      vPx: 10.0,
+      vPy: 5.0,
+      // Center of Mass G coordinates relative to P (in meters)
+      xBar: 1.5,
+      yBar: 1.0,
+      // Rigid body properties
+      mass: 2.0,      // kg
+      IG: 12.0,       // kg*m^2 about Center of Mass G
+      // Visual display toggles
+      showComponents: true,
+      showCircle: true,
+      // Animation state
+      isPlaying: false,
+      animAngle: 0,
+      animOffsetX: 0,
+      animOffsetY: 0,
+      lastTimestamp: 0,
+      // Drag interaction state
+      draggingTarget: null // 'i' or 'G'
+    };
+
+    // ==========================================
+    // DOM ELEMENT REFERENCES
+    // ==========================================
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = document.getElementById('canvasWrapper');
+
+    const sliders = {
+      x: document.getElementById('sliderX'),
+      y: document.getElementById('sliderY'),
+      omega: document.getElementById('sliderOmega'),
+      vPx: document.getElementById('sliderVpx'),
+      vPy: document.getElementById('sliderVpy'),
+      xBar: document.getElementById('sliderXbar'),
+      yBar: document.getElementById('sliderYbar'),
+    };
+
+    // ==========================================
+    // CANVAS SIZING & COORDINATE TRANSFORMS
+    // ==========================================
+    let width = 0;
+    let height = 0;
+    let scale = 36; // pixels per meter
+    let originX = 0;
+    let originY = 0;
+
+    function resizeCanvas() {
+      const rect = wrapper.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      width = rect.width;
+      height = rect.height;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Keep scale responsive to smaller screens
+      scale = Math.min(width, height) / 12.5;
+      originX = width * 0.44;
+      originY = height * 0.56;
+      draw();
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // Convert world coordinates (relative to P's screen position) to canvas pixels
+    function worldToScreen(wx, wy, pScreenX, pScreenY) {
+      return {
+        sx: pScreenX + wx * scale,
+        sy: pScreenY - wy * scale // Y is up in physics, down in canvas
+      };
+    }
+
+    function screenToWorld(sx, sy, pScreenX, pScreenY) {
+      return {
+        wx: (sx - pScreenX) / scale,
+        wy: (pScreenY - sy) / scale
+      };
+    }
+
+    // ==========================================
+    // DRAWING HELPERS (3Blue1Brown Style)
+    // ==========================================
+    function drawArrow(fromX, fromY, toX, toY, color, lineWidth = 2.5, headLen = 10, dashed = false) {
+      const dx = toX - fromX;
+      const dy = toY - fromY;
+      const len = Math.hypot(dx, dy);
+      if (len < 2) return;
+
+      const angle = Math.atan2(dy, dx);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (dashed) {
+        ctx.setLineDash([5, 5]);
+      }
+
+      // Line shaft (stop slightly before tip so arrowhead looks crisp)
+      const effectiveHead = Math.min(headLen, len * 0.45);
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX - Math.cos(angle) * (effectiveHead * 0.65), toY - Math.sin(angle) * (effectiveHead * 0.65));
+      ctx.stroke();
+
+      // Solid arrowhead
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(
+        toX - effectiveHead * Math.cos(angle - Math.PI / 6),
+        toY - effectiveHead * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        toX - effectiveHead * Math.cos(angle + Math.PI / 6),
+        toY - effectiveHead * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawOrganicBlob(pScreenX, pScreenY, rotAngle) {
+      ctx.save();
+      ctx.translate(pScreenX, pScreenY);
+      ctx.rotate(-rotAngle); // negative because canvas Y points down
+
+      // Draw a smooth rigid body shape anchored around P and enclosing G and i
+      ctx.beginPath();
+      const pts = 36;
+      for (let k = 0; k <= pts; k++) {
+        const theta = (k / pts) * Math.PI * 2;
+        // Organic potato/blob radius matching the lecture slide aesthetic
+        const rMeters = 4.6
+          + 0.75 * Math.cos(2 * theta - 0.5)
+          + 0.45 * Math.sin(3 * theta + 0.4)
+          + 0.35 * Math.cos(theta - 0.8);
+        const px = (rMeters * Math.cos(theta) + 0.6) * scale;
+        const py = -(rMeters * Math.sin(theta) + 0.5) * scale;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+
+      const grad = ctx.createRadialGradient(0.5 * scale, -0.5 * scale, 0.4 * scale, 0.5 * scale, -0.5 * scale, 5.5 * scale);
+      grad.addColorStop(0, 'rgba(56, 189, 248, 0.20)');
+      grad.addColorStop(0.7, 'rgba(14, 165, 233, 0.10)');
+      grad.addColorStop(1, 'rgba(2, 132, 199, 0.04)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ==========================================
+    // MAIN RENDER LOOP
+    // ==========================================
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Compute P's current screen position (animates if playing, otherwise centered)
+      const pScreenX = originX + state.animOffsetX * scale;
+      const pScreenY = originY - state.animOffsetY * scale;
+
+      // 1. Background Reference Grid (fixed to lab frame)
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.07)';
+      ctx.lineWidth = 1;
+      const startCol = Math.floor(-pScreenX / scale) - 1;
+      const endCol = Math.ceil((width - pScreenX) / scale) + 1;
+      for (let c = startCol; c <= endCol; c++) {
+        const gx = pScreenX + c * scale;
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, height);
+        ctx.stroke();
+      }
+      const startRow = Math.floor(-pScreenY / scale) - 1;
+      const endRow = Math.ceil((height - pScreenY) / scale) + 1;
+      for (let r = startRow; r <= endRow; r++) {
+        const gy = pScreenY + r * scale;
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(width, gy);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 2. Draw Rigid Body Blob
+      drawOrganicBlob(pScreenX, pScreenY, state.animAngle);
+
+      // 3. Draw Local Axes (x, y) originating at P
+      ctx.save();
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.35)';
+      ctx.lineWidth = 1.5;
+      // X-axis
+      drawArrow(pScreenX - 1.2 * scale, pScreenY, pScreenX + 5.6 * scale, pScreenY, 'rgba(226, 232, 240, 0.45)', 1.5, 8);
+      // Y-axis
+      drawArrow(pScreenX, pScreenY + 1.2 * scale, pScreenX, pScreenY - 5.4 * scale, 'rgba(226, 232, 240, 0.45)', 1.5, 8);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'italic 600 13px "JetBrains Mono", monospace';
+      ctx.fillText('x (i)', pScreenX + 5.7 * scale, pScreenY + 4);
+      ctx.fillText('y (j)', pScreenX - 16, pScreenY - 5.55 * scale);
+      ctx.restore();
+
+      // Rotate local coordinates (x, y) and (xBar, yBar) by animAngle when playing
+      const cosA = Math.cos(state.animAngle);
+      const sinA = Math.sin(state.animAngle);
+
+      const curX = state.x * cosA - state.y * sinA;
+      const curY = state.x * sinA + state.y * cosA;
+
+      const curXbar = state.xBar * cosA - state.yBar * sinA;
+      const curYbar = state.xBar * sinA + state.yBar * cosA;
+
+      const posI = worldToScreen(curX, curY, pScreenX, pScreenY);
+      const posG = worldToScreen(curXbar, curYbar, pScreenX, pScreenY);
+
+      // 4. Dashed Orbit Circle around P passing through i
+      const radiusI = Math.hypot(curX, curY);
+      if (state.showCircle && radiusI > 0.05) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pScreenX, pScreenY, radiusI * scale, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 6]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 5. Coordinate Projection Lines from P to i (x and y dashed guides)
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 4]);
+      // Vertical drop to x-axis
+      ctx.beginPath();
+      ctx.moveTo(posI.sx, posI.sy);
+      ctx.lineTo(posI.sx, pScreenY);
+      // Horizontal drop to y-axis
+      ctx.moveTo(posI.sx, posI.sy);
+      ctx.lineTo(pScreenX, posI.sy);
+      ctx.stroke();
+
+      // Radius vector r from P to i
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(pScreenX, pScreenY);
+      ctx.lineTo(posI.sx, posI.sy);
+      ctx.stroke();
+      ctx.restore();
+
+      // Label x and y distances on the guides
+      ctx.save();
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '600 11px "JetBrains Mono", monospace';
+      if (Math.abs(curX) > 0.3) {
+        ctx.fillText(`x=${curX.toFixed(1)}`, (pScreenX + posI.sx) / 2 - 16, posI.sy - 6);
+      }
+      if (Math.abs(curY) > 0.3) {
+        ctx.fillText(`y=${curY.toFixed(1)}`, posI.sx + 6, (pScreenY + posI.sy) / 2 + 4);
+      }
+      ctx.restore();
+
+      // 6. Center of Mass G Marker & Orbit Path
+      const radiusG = Math.hypot(curXbar, curYbar);
+      if (radiusG > 0.05) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pScreenX, pScreenY, radiusG * scale, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.22)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 4]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw G (Center of Mass icon: checkered/quarter circle)
+      ctx.save();
+      ctx.translate(posG.sx, posG.sy);
+      ctx.beginPath();
+      ctx.arc(0, 0, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#1e1b4b';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#c084fc';
+      ctx.stroke();
+      // Quarters
+      ctx.fillStyle = '#c084fc';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, 7, 0, Math.PI / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, 7, Math.PI, (3 * Math.PI) / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#d8b4fe';
+      ctx.font = 'bold 12px "Inter", sans-serif';
+      ctx.fillText('G (COM)', 10, 4);
+      ctx.restore();
+
+      // 7. Velocity Vectors (scaled visually so 10 m/s fits cleanly on screen)
+      const vScale = scale * 0.22; // pixels per (m/s)
+
+      // Rotational velocity components of i around P:
+      // v_rot_x = -omega * y, v_rot_y = +omega * x
+      const vRotX = -state.omega * curY;
+      const vRotY = state.omega * curX;
+
+      // Total velocity of i:
+      const vTotX = state.vPx + vRotX;
+      const vTotY = state.vPy + vRotY;
+
+      // Draw v_P at Point P (Blue)
+      const pVelTipX = pScreenX + state.vPx * vScale;
+      const pVelTipY = pScreenY - state.vPy * vScale;
+      drawArrow(pScreenX, pScreenY, pVelTipX, pVelTipY, '#38bdf8', 2.8, 10);
+      if (Math.hypot(state.vPx, state.vPy) > 0.4) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 12px "JetBrains Mono", monospace';
+        ctx.fillText('v_P', pVelTipX + 6, pVelTipY - 4);
+      }
+
+      // Draw v_P ghost copy starting at particle i (shows vector addition v_P + v_{i/P})
+      const iGhostVpX = posI.sx + state.vPx * vScale;
+      const iGhostVpY = posI.sy - state.vPy * vScale;
+      if (Math.hypot(state.vPx, state.vPy) > 0.2) {
+        drawArrow(posI.sx, posI.sy, iGhostVpX, iGhostVpY, 'rgba(56, 189, 248, 0.55)', 2, 8, true);
+      }
+
+      // Draw Rotational Velocity v_{i/P} at particle i (Amber)
+      const iRotTipX = posI.sx + vRotX * vScale;
+      const iRotTipY = posI.sy - vRotY * vScale;
+      drawArrow(posI.sx, posI.sy, iRotTipX, iRotTipY, '#fbbf24', 3, 10);
+
+      // Draw (-omega*y) and (+omega*x) right-triangle decomposition of v_{i/P}!
+      if (state.showComponents && Math.hypot(vRotX, vRotY) > 0.2) {
+        const cornerX = posI.sx + vRotX * vScale;
+        const cornerY = posI.sy;
+
+        // Horizontal leg: -omega * y (Left/Right)
+        if (Math.abs(vRotX) > 0.15) {
+          drawArrow(posI.sx, posI.sy, cornerX, cornerY, '#fb923c', 2.2, 8, true);
+          ctx.fillStyle = '#fdba74';
+          ctx.font = 'bold 11px "JetBrains Mono", monospace';
+          const labelX = (posI.sx + cornerX) / 2 - 22;
+          const labelY = posI.sy + (vRotY >= 0 ? 15 : -8);
+          ctx.fillText(`${vRotX >= 0 ? '+' : ''}${vRotX.toFixed(1)} i`, labelX, labelY);
+        }
+
+        // Vertical leg: +omega * x (Up/Down)
+        if (Math.abs(vRotY) > 0.15) {
+          drawArrow(cornerX, cornerY, iRotTipX, iRotTipY, '#facc15', 2.2, 8, true);
+          ctx.fillStyle = '#fef08a';
+          ctx.font = 'bold 11px "JetBrains Mono", monospace';
+          const labelX = cornerX + (vRotX >= 0 ? 8 : -54);
+          const labelY = (cornerY + iRotTipY) / 2 + 4;
+          ctx.fillText(`${vRotY >= 0 ? '+' : ''}${vRotY.toFixed(1)} j`, labelX, labelY);
+        }
+      }
+
+      // Draw Resultant Total Velocity v_i at particle i (Emerald Green)
+      const iTotTipX = posI.sx + vTotX * vScale;
+      const iTotTipY = posI.sy - vTotY * vScale;
+      drawArrow(posI.sx, posI.sy, iTotTipX, iTotTipY, '#34d399', 3.4, 11);
+
+      // Tip-to-tail guide from v_P ghost to v_i
+      if (Math.hypot(state.vPx, state.vPy) > 0.2 && Math.hypot(vRotX, vRotY) > 0.2) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(iGhostVpX, iGhostVpY);
+        ctx.lineTo(iTotTipX, iTotTipY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (Math.hypot(vTotX, vTotY) > 0.3) {
+        ctx.fillStyle = '#34d399';
+        ctx.font = 'bold 13px "JetBrains Mono", monospace';
+        ctx.fillText('v_i', iTotTipX + 7, iTotTipY - 5);
+      }
+
+      // 8. Draw Curved Omega Spin Indicator around P
+      if (Math.abs(state.omega) > 0.05) {
+        ctx.save();
+        const arcR = 1.35 * scale;
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (state.omega > 0) {
+          // Counterclockwise in standard math coords = clockwise angle decrease in canvas coords
+          ctx.arc(pScreenX, pScreenY, arcR, -0.2, -1.35, true);
+          ctx.stroke();
+          // Arrowhead at end (-1.35 rad)
+          const endX = pScreenX + arcR * Math.cos(-1.35);
+          const endY = pScreenY + arcR * Math.sin(-1.35);
+          drawArrow(endX + 4, endY + 1, endX, endY, '#fbbf24', 2, 7);
+        } else {
+          ctx.arc(pScreenX, pScreenY, arcR, -1.35, -0.2, false);
+          ctx.stroke();
+          const endX = pScreenX + arcR * Math.cos(-0.2);
+          const endY = pScreenY + arcR * Math.sin(-0.2);
+          drawArrow(endX - 1, endY - 4, endX, endY, '#fbbf24', 2, 7);
+        }
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 12px "JetBrains Mono", monospace';
+        ctx.fillText(`ω=${state.omega.toFixed(1)}`, pScreenX + arcR * 0.72, pScreenY - arcR * 0.75);
+        ctx.restore();
+      }
+
+      // 9. Draw Reference Point P Node
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pScreenX, pScreenY, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#f43f5e';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.fillStyle = '#fda4af';
+      ctx.font = 'bold 13px "Inter", sans-serif';
+      ctx.fillText('P', pScreenX - 16, pScreenY + 16);
+      ctx.restore();
+
+      // 10. Draw Draggable Particle i Node
+      ctx.save();
+      // Outer glow halo
+      ctx.beginPath();
+      ctx.arc(posI.sx, posI.sy, 13, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.18)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(posI.sx, posI.sy, 6.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#0ea5e9';
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px "JetBrains Mono", monospace';
+      ctx.fillText('i', posI.sx - 15, posI.sy - 10);
+      ctx.restore();
+    }
+
+    // ==========================================
+    // UI & EQUATIONS SYNCHRONIZATION
+    // ==========================================
+    function formatSigned(num, decimals = 1) {
+      const val = Number(num.toFixed(decimals));
+      if (Object.is(val, -0)) return '0.0';
+      return (val >= 0 ? '+' : '−') + Math.abs(val).toFixed(decimals);
+    }
+
+    function updateUI() {
+      // Sync slider values & text readouts
+      sliders.x.value = state.x;
+      sliders.y.value = state.y;
+      sliders.omega.value = state.omega;
+      sliders.vPx.value = state.vPx;
+      sliders.vPy.value = state.vPy;
+      sliders.xBar.value = state.xBar;
+      sliders.yBar.value = state.yBar;
+
+      document.getElementById('valX').textContent = state.x.toFixed(1);
+      document.getElementById('valY').textContent = state.y.toFixed(1);
+      document.getElementById('valR').textContent = Math.hypot(state.x, state.y).toFixed(2);
+      document.getElementById('valOmega').textContent = state.omega.toFixed(1);
+      document.getElementById('valVpx').textContent = state.vPx.toFixed(0);
+      document.getElementById('valVpy').textContent = state.vPy.toFixed(0);
+
+      const spinLbl = document.getElementById('spinDirLabel');
+      if (state.omega > 0) {
+        spinLbl.textContent = 'CCW (+)';
+        spinLbl.className = 'font-mono text-[11px] text-amber-400';
+      } else if (state.omega < 0) {
+        spinLbl.textContent = 'CW (−)';
+        spinLbl.className = 'font-mono text-[11px] text-rose-400';
+      } else {
+        spinLbl.textContent = 'No Spin (0)';
+        spinLbl.className = 'font-mono text-[11px] text-slate-400';
+      }
+
+      // Part 1: Velocity Calculations
+      const vRotX = -state.omega * state.y;
+      const vRotY = state.omega * state.x;
+      const vTotX = state.vPx + vRotX;
+      const vTotY = state.vPy + vRotY;
+      const vTotMag = Math.hypot(vTotX, vTotY);
+
+      document.getElementById('eqRotX').textContent = formatSigned(vRotX, 1);
+      document.getElementById('eqRotY').textContent = formatSigned(vRotY, 1);
+
+      document.getElementById('eqTotXCalc').textContent = `${state.vPx.toFixed(0)} ${vRotX >= 0 ? '+' : '−'} ${Math.abs(vRotX).toFixed(1)}`;
+      document.getElementById('eqTotYCalc').textContent = `${state.vPy.toFixed(0)} ${vRotY >= 0 ? '+' : '−'} ${Math.abs(vRotY).toFixed(1)}`;
+      document.getElementById('eqTotVec').textContent = `${vTotX.toFixed(1)} i ${vTotY >= 0 ? '+' : '−'} ${Math.abs(vTotY).toFixed(1)} j`;
+      document.getElementById('eqTotMag').textContent = vTotMag.toFixed(2);
+
+      // Dynamic Plain-English Intuition Narrative
+      const qBadge = document.getElementById('quadrantBadge');
+      const intuitionEl = document.getElementById('intuitionText');
+
+      let quadName = 'On Axis';
+      if (state.x > 0 && state.y > 0) quadName = 'Quadrant I (+x, +y)';
+      else if (state.x < 0 && state.y > 0) quadName = 'Quadrant II (−x, +y)';
+      else if (state.x < 0 && state.y < 0) quadName = 'Quadrant III (−x, −y)';
+      else if (state.x > 0 && state.y < 0) quadName = 'Quadrant IV (+x, −y)';
+      qBadge.textContent = quadName;
+
+      if (Math.abs(state.omega) < 0.05) {
+        intuitionEl.innerHTML = `Since <span class="font-mono text-amber-300">&omega; = 0</span>, the body is not spinning at all. Every particle <span class="font-mono text-white">i</span> simply translates with the exact same velocity as <span class="font-mono text-rose-400">P</span> (<span class="font-mono text-sky-300">${state.vPx} i + ${state.vPy} j m/s</span>).`;
+      } else {
+        const dirWord = state.omega > 0 ? 'counterclockwise' : 'clockwise';
+        const horizDir = vRotX < 0 ? 'LEFT (−i)' : (vRotX > 0 ? 'RIGHT (+i)' : 'neither left nor right');
+        const vertDir = vRotY > 0 ? 'UP (+j)' : (vRotY < 0 ? 'DOWN (−j)' : 'neither up nor down');
+        intuitionEl.innerHTML = `
+          Because particle <span class="font-mono text-white">i</span> is <span class="font-mono text-sky-300">${Math.abs(state.y).toFixed(1)} m</span> ${state.y >= 0 ? 'above' : 'below'} <span class="font-mono text-rose-400">P</span> and <span class="font-mono text-sky-300">${Math.abs(state.x).toFixed(1)} m</span> to the ${state.x >= 0 ? 'right' : 'left'}, spinning <strong class="text-amber-300">${dirWord}</strong> whips it <strong>${horizDir}</strong> at <span class="font-mono text-amber-300">${vRotX.toFixed(1)} m/s</span> (from <span class="font-mono">&minus;&omega;y</span>) and pushes it <strong>${vertDir}</strong> at <span class="font-mono text-amber-300">${vRotY.toFixed(1)} m/s</span> (from <span class="font-mono">+&omega;x</span>).
+        `;
+      }
+
+      // Part 2: Kinetic Energy & Wobble Term Calculations
+      document.getElementById('valXbar').textContent = state.xBar.toFixed(1);
+      document.getElementById('valYbar').textContent = state.yBar.toFixed(1);
+      document.getElementById('lblXbar').textContent = `${state.xBar.toFixed(1)} m`;
+      document.getElementById('lblYbar').textContent = `${state.yBar.toFixed(1)} m`;
+
+      const vP2 = state.vPx ** 2 + state.vPy ** 2;
+      const tMoving = 0.5 * state.mass * vP2;
+
+      // Wobble term: -(v_P)_x * omega * y_bar * m + (v_P)_y * omega * x_bar * m
+      const tWobble = (-state.vPx * state.omega * state.yBar * state.mass)
+                    + (state.vPy * state.omega * state.xBar * state.mass);
+
+      // Parallel Axis Theorem: I_P = I_G + m * d^2
+      const d2 = state.xBar ** 2 + state.yBar ** 2;
+      const IP = state.IG + state.mass * d2;
+      const tSpinning = 0.5 * IP * (state.omega ** 2);
+
+      const tTotal = tMoving + tWobble + tSpinning;
+
+      document.getElementById('energyMoving').textContent = `${tMoving.toFixed(1)} J`;
+      document.getElementById('energyWobble').textContent = `${tWobble >= 0 ? '+' : '−'}${Math.abs(tWobble).toFixed(1)} J`;
+      document.getElementById('valIp').textContent = IP.toFixed(1);
+      document.getElementById('energySpinning').textContent = `${tSpinning.toFixed(1)} J`;
+      document.getElementById('energyTotal').textContent = `${tTotal.toFixed(1)} J`;
+
+      // Highlight wobble card state
+      const wobbleCard = document.getElementById('wobbleCard');
+      const wobbleBadge = document.getElementById('wobbleStatusBadge');
+      if (Math.abs(tWobble) < 0.05) {
+        wobbleCard.className = 'flex items-center justify-between bg-slate-950/60 px-3 py-2.5 rounded-lg border border-slate-800 transition-colors';
+        wobbleBadge.textContent = (state.xBar === 0 && state.yBar === 0) ? 'ZERO (P = G)' : 'ZERO';
+        wobbleBadge.className = 'text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono';
+      } else {
+        wobbleCard.className = 'flex items-center justify-between bg-amber-500/10 px-3 py-2.5 rounded-lg border border-amber-500/40 transition-colors';
+        wobbleBadge.textContent = tWobble > 0 ? '+BOOSTS ENERGY' : '−REDUCES ENERGY';
+        wobbleBadge.className = 'text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200 font-mono';
+      }
+
+      draw();
+    }
+
+    // ==========================================
+    // EVENT LISTENERS (SLIDERS, BUTTONS, DRAG)
+    // ==========================================
+    Object.entries(sliders).forEach(([key, el]) => {
+      el.addEventListener('input', (e) => {
+        state[key] = parseFloat(e.target.value);
+        // Reset animation displacement when manually adjusting parameters while paused
+        if (!state.isPlaying) {
+          state.animAngle = 0;
+          state.animOffsetX = 0;
+          state.animOffsetY = 0;
+        }
+        updateUI();
+      });
+    });
+
+    document.getElementById('chkComponents').addEventListener('change', (e) => {
+      state.showComponents = e.target.checked;
+      draw();
+    });
+
+    document.getElementById('chkCircle').addEventListener('change', (e) => {
+      state.showCircle = e.target.checked;
+      draw();
+    });
+
+    // Presets
+    document.getElementById('btnPresetTurntable').addEventListener('click', () => {
+      state.isPlaying = false;
+      updatePlayButton();
+      state.animAngle = 0;
+      state.animOffsetX = 0;
+      state.animOffsetY = 0;
+      state.x = 3.0;
+      state.y = 4.0;
+      state.omega = 2.0;
+      state.vPx = 10.0;
+      state.vPy = 5.0;
+      state.xBar = 1.5;
+      state.yBar = 1.0;
+      updateUI();
+    });
+
+    document.getElementById('btnPresetPureSpin').addEventListener('click', () => {
+      state.isPlaying = false;
+      updatePlayButton();
+      state.animAngle = 0;
+      state.animOffsetX = 0;
+      state.animOffsetY = 0;
+      state.x = 3.0;
+      state.y = 4.0;
+      state.omega = 2.0;
+      state.vPx = 0.0;
+      state.vPy = 0.0;
+      updateUI();
+    });
+
+    document.getElementById('btnPresetCOM').addEventListener('click', () => {
+      state.xBar = 0.0;
+      state.yBar = 0.0;
+      updateUI();
+    });
+
+    // Play / Pause Animation Loop
+    function updatePlayButton() {
+      const icon = document.getElementById('playIcon');
+      const text = document.getElementById('playText');
+      if (state.isPlaying) {
+        icon.innerHTML = '&#10074;&#10074;';
+        text.textContent = 'Pause Motion';
+      } else {
+        icon.innerHTML = '&#9654;';
+        text.textContent = 'Animate Motion';
+      }
+    }
+
+    document.getElementById('btnPlayPause').addEventListener('click', () => {
+      state.isPlaying = !state.isPlaying;
+      updatePlayButton();
+      if (state.isPlaying) {
+        state.lastTimestamp = performance.now();
+        requestAnimationFrame(animateLoop);
+      }
+    });
+
+    document.getElementById('btnResetPose').addEventListener('click', () => {
+      state.isPlaying = false;
+      updatePlayButton();
+      state.animAngle = 0;
+      state.animOffsetX = 0;
+      state.animOffsetY = 0;
+      draw();
+    });
+
+    function animateLoop(timestamp) {
+      if (!state.isPlaying) return;
+      const dt = Math.min((timestamp - state.lastTimestamp) / 1000, 0.05);
+      state.lastTimestamp = timestamp;
+
+      // Slow-motion factor (0.35x) so user can visually track vectors and wobble
+      const slowMo = 0.35;
+      state.animAngle += state.omega * dt * slowMo;
+      state.animOffsetX += state.vPx * dt * slowMo * 0.25;
+      state.animOffsetY += state.vPy * dt * slowMo * 0.25;
+
+      // Wrap translation smoothly so body stays inside the viewport
+      if (state.animOffsetX > 4.5) state.animOffsetX = -4.5;
+      if (state.animOffsetX < -4.5) state.animOffsetX = 4.5;
+      if (state.animOffsetY > 3.5) state.animOffsetY = -3.5;
+      if (state.animOffsetY < -3.5) state.animOffsetY = 3.5;
+
+      draw();
+      requestAnimationFrame(animateLoop);
+    }
+
+    // ==========================================
+    // POINTER / TOUCH DRAGGING ON CANVAS
+    // ==========================================
+    function getPointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        sx: clientX - rect.left,
+        sy: clientY - rect.top
+      };
+    }
+
+    function handlePointerDown(e) {
+      const { sx, sy } = getPointerPos(e);
+      const pScreenX = originX + state.animOffsetX * scale;
+      const pScreenY = originY - state.animOffsetY * scale;
+
+      const cosA = Math.cos(state.animAngle);
+      const sinA = Math.sin(state.animAngle);
+      const curX = state.x * cosA - state.y * sinA;
+      const curY = state.x * sinA + state.y * cosA;
+      const posI = worldToScreen(curX, curY, pScreenX, pScreenY);
+
+      const curXbar = state.xBar * cosA - state.yBar * sinA;
+      const curYbar = state.xBar * sinA + state.yBar * cosA;
+      const posG = worldToScreen(curXbar, curYbar, pScreenX, pScreenY);
+
+      if (Math.hypot(sx - posI.sx, sy - posI.sy) < 28) {
+        state.draggingTarget = 'i';
+        e.preventDefault();
+      } else if (Math.hypot(sx - posG.sx, sy - posG.sy) < 24) {
+        state.draggingTarget = 'G';
+        e.preventDefault();
+      }
+    }
+
+    function handlePointerMove(e) {
+      if (!state.draggingTarget) return;
+      e.preventDefault();
+      const { sx, sy } = getPointerPos(e);
+      const pScreenX = originX + state.animOffsetX * scale;
+      const pScreenY = originY - state.animOffsetY * scale;
+      const { wx, wy } = screenToWorld(sx, sy, pScreenX, pScreenY);
+
+      // Un-rotate back into body-fixed coordinates
+      const cosA = Math.cos(-state.animAngle);
+      const sinA = Math.sin(-state.animAngle);
+      const bodyX = wx * cosA - wy * sinA;
+      const bodyY = wx * sinA + wy * cosA;
+
+      if (state.draggingTarget === 'i') {
+        // Snap gently to 0.5m increments for clean numbers
+        state.x = Math.max(-5, Math.min(5, Math.round(bodyX * 2) / 2));
+        state.y = Math.max(-5, Math.min(5, Math.round(bodyY * 2) / 2));
+      } else if (state.draggingTarget === 'G') {
+        state.xBar = Math.max(-3, Math.min(3, Math.round(bodyX * 2) / 2));
+        state.yBar = Math.max(-3, Math.min(3, Math.round(bodyY * 2) / 2));
+      }
+      updateUI();
+    }
+
+    function handlePointerUp() {
+      state.draggingTarget = null;
+    }
+
+    canvas.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+
+    canvas.addEventListener('touchstart', handlePointerDown, { passive: false });
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+
+    // Initialize on load
+    window.addEventListener('load', () => {
+      resizeCanvas();
+      updateUI();
+    });
+  </script>
+</body>
+</html>
